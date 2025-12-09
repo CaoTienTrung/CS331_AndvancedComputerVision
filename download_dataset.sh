@@ -8,12 +8,10 @@ else
     echo "Dataset directory already exists. Skipping creation."
 fi
 
-# Đường dẫn Python trong conda env
-PYTHON_PATH="C:\Users\ADMIN\.conda\envs\cs331_env\python.exe"
 
 # Tải file bằng gdown
 echo "Downloading file..."
-"$PYTHON_PATH" -m gdown --id 1ymDYrGs9DSRicfZbSCDiOu0ikGDh5k6S -O Dataset/myfile.zip
+gdown --id 1ymDYrGs9DSRicfZbSCDiOu0ikGDh5k6S -O Dataset/myfile.zip
 
 # Giải nén file (Windows Git Bash có unzip?)
 if command -v unzip &> /dev/null
