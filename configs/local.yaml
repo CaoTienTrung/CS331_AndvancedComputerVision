@@ -1,7 +1,18 @@
 training:
-  data_dir: ./Dataset
+  data_dir: /home/anhkhoa/anhkhoa/CS331_AndvancedComputerVision/Dataset
   dataset_type: ""
   resize_val: true
   additional_prompt: false
   subset_scale: 1.0
-  batch_size: 8
+  batch_size: 1
+  num_epochs: 10
+
+
+model:
+  fim_depth: 4
+  fim_num_heads: 8
+  mlp_ratio: 4
+
+optim:
+  lr: 0.0001
+  weight_decay: 0.001
