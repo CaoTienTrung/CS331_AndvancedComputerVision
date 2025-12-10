@@ -29,7 +29,7 @@ IM_NORM_STD = [0.229, 0.224, 0.225]
 class FSC147(Dataset):
     def __init__(self, config,
                  split:str):
-        """
+        """j
         Parameters
         ----------
         split : str, 'train', 'val' or 'test'
