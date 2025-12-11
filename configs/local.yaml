@@ -7,6 +7,7 @@ training:
   batch_size: 1
   num_epochs: 10
   log_file: ./logs/local.log
+  contrast_pre_epoch: 20
 
 
 model:

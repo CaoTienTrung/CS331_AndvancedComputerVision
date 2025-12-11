@@ -19,6 +19,8 @@ class Engine:
         self.model, self.optimizer, self.schedular = self.creates()
         self.loss = F.mse_loss
         self.rank_loss = RankLoss(temperature=0.07)
+        self.current_epoch = 0
+        self.contrast_pre_epoch = config['training'].get('contrast_pre_epoch', 20)
     
     def reload(self):
         checkpoint_path = self.config['training'].get('save_path', 'checkpoint.pth')
@@ -30,6 +32,8 @@ class Engine:
             logging.info("Reloaded model from {}".format(checkpoint_path))
         else:
             logging.info("No checkpoint path provided, training from scratch.")
+        
+        self.current_epoch = checkpoint.get('epoch', 0) if checkpoint_path is not None else 0
     
     def save(self, epoch):
         checkpoint_path = self.config['training'].get('save_path', 'checkpoint.pth')
@@ -39,6 +43,7 @@ class Engine:
             'optimizer_state_dict': self.optimizer.state_dict(),
             'schedular_state_dict': self.schedular.state_dict(),
         }, checkpoint_path)
+
         logging.info("Saved model checkpoint to {}".format(checkpoint_path))
         
     def creates(self):
@@ -99,6 +104,11 @@ class Engine:
             )
 
             loss = mse_loss + 0.01 * rank_loss
+            # if self.current_epoch <= self.contrast_pre_epoch:
+            #     loss = rank_loss 
+
+
+            
             # Update information of MAE and RMSE
             batch_mae = 0
 
@@ -125,14 +135,15 @@ class Engine:
 
             loss.backward()
             self.optimizer.step()
-            self.schedular.step()
+            # self.schedular.step()
 
 
             progress_bar.set_postfix(
                 {
                 'batch_loss': loss.item(),
                 'batch_mae': batch_mae,
-                'batch_rmse': batch_rmse
+                'batch_rmse': batch_rmse,
+                'lr' : self.optimizer.param_groups[0]['lr']
                 })
         
         epoch_mae  = total_abs_err / total_samples
@@ -239,8 +250,10 @@ class Engine:
             self.reload()
 
         min_mae = float('inf')
-
-        for epoch in range(num_epochs):
+        
+        current_epoch = self.current_epoch
+        for epoch in range(current_epoch, num_epochs):
+            self.current_epoch = epoch
             logging.info("Epoch {}/{}".format(epoch+1, num_epochs))
             self.train(train_loader)
             epoch_mae, epoch_rmse = self.evaluate(eval_loader)
@@ -250,6 +263,7 @@ class Engine:
                 self.save(epoch+1)
                 logging.info("New best model saved with MAE: {:.4f}".format(min_mae))
             
+            self.schedular.step()
     
 
 
