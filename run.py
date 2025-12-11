@@ -62,7 +62,13 @@ class Engine:
 
     def train(self, trainloader):
         self.model.train()
+
         progress_bar = tqdm(trainloader, desc="Training", leave=False)
+
+        total_abs_err = 0.0      # tổng |pred - gt|
+        total_sq_err  = 0.0      # tổng (pred - gt)^2
+        total_samples = 0        # tổng số ảnh
+
         for batch in progress_bar:
             imgs = batch['image'].to(self.device)
             gt_density = batch['density'].to(self.device)
@@ -97,6 +103,8 @@ class Engine:
             batch_mae = 0
 
             batch_rmse = 0
+
+
             gt_sum = 0
             for i in range(output.shape[0]):
                 pred_cnt = torch.sum(output[i] / SCALE_FACTOR).item()
@@ -105,6 +113,12 @@ class Engine:
                 gt_sum += gt_cnt
                 batch_mae += cnt_err
                 batch_rmse += cnt_err ** 2
+
+                total_abs_err += cnt_err
+                total_sq_err  += cnt_err ** 2
+                total_samples += 1
+
+            
             batch_mae /= output.shape[0]
             batch_rmse /= output.shape[0]
             batch_rmse = math.sqrt(batch_rmse)
@@ -113,9 +127,6 @@ class Engine:
             self.optimizer.step()
             self.schedular.step()
 
-            logging.info("Loss: {:.4f}, MSE Loss: {:.4f}, Rank Loss: {:.4f}, MAE: {:.4f}, RMSE: {:.4f}, GT Sum: {:.4f}".format(
-                loss.item(), mse_loss.item(), rank_loss.item(), batch_mae, batch_rmse, gt_sum
-            ))
 
             progress_bar.set_postfix(
                 {
@@ -123,6 +134,16 @@ class Engine:
                 'batch_mae': batch_mae,
                 'batch_rmse': batch_rmse
                 })
+        
+        epoch_mae  = total_abs_err / total_samples
+        epoch_rmse = math.sqrt(total_sq_err / total_samples)
+
+        logging.info(
+            "Train epoch done | epoch MAE: {:.4f}, epoch RMSE: {:.4f}".format(
+                epoch_mae, epoch_rmse
+            )
+        )
+
 
             
 
@@ -134,6 +155,11 @@ class Engine:
     def evaluate(self, dataloader):
         self.model.eval()
         progress_bar = tqdm(dataloader, desc = "Evaluating", leave=False)
+
+        total_abs_err = 0.0      # tổng |pred - gt|
+        total_sq_err  = 0.0      # tổng (pred - gt)^2
+        total_samples = 0        # tổng số ảnh
+
         for batch in progress_bar:
             imgs = batch['image'].to(self.device)
             gt_density = batch['density'].to(self.device)
@@ -176,13 +202,18 @@ class Engine:
                 gt_sum += gt_cnt
                 batch_mae += cnt_err
                 batch_rmse += cnt_err ** 2
+                
+                total_abs_err += cnt_err
+                total_sq_err  += cnt_err ** 2   
+                total_samples += 1
+
             batch_mae /= output.shape[0]
             batch_rmse /= output.shape[0]
             batch_rmse = math.sqrt(batch_rmse)
 
-            logging.info("Loss: {:.4f}, MSE Loss: {:.4f}, Rank Loss: {:.4f}, MAE: {:.4f}, RMSE: {:.4f}, GT Sum: {:.4f}".format(
-                loss.item(), mse_loss.item(), rank_loss.item(), batch_mae, batch_rmse, gt_sum
-            ))
+            # logging.info("Loss: {:.4f}, MSE Loss: {:.4f}, Rank Loss: {:.4f}, MAE: {:.4f}, RMSE: {:.4f}, GT Sum: {:.4f}".format(
+            #     loss.item(), mse_loss.item(), rank_loss.item(), batch_mae, batch_rmse, gt_sum
+            # ))
 
             progress_bar.set_postfix(
                 {
@@ -191,7 +222,15 @@ class Engine:
                 'batch_rmse': batch_rmse
                 })
 
-            return batch_mae, batch_rmse
+        
+        epoch_mae  = total_abs_err / total_samples
+        epoch_rmse = math.sqrt(total_sq_err / total_samples)    
+        logging.info(
+            "Eval epoch done | epoch MAE: {:.4f}, epoch RMSE: {:.4f}".format(
+                epoch_mae, epoch_rmse
+            )
+        )
+        return epoch_mae, epoch_rmse
     
     def train_eval(self, train_loader, eval_loader):
         num_epochs = self.config['training']['num_epochs']
@@ -204,10 +243,10 @@ class Engine:
         for epoch in range(num_epochs):
             logging.info("Epoch {}/{}".format(epoch+1, num_epochs))
             self.train(train_loader)
-            batch_mae, batch_rmse = self.evaluate(eval_loader)
+            epoch_mae, epoch_rmse = self.evaluate(eval_loader)
 
-            if batch_mae < min_mae:
-                min_mae = batch_mae
+            if epoch_mae < min_mae:
+                min_mae = epoch_mae
                 self.save(epoch+1)
                 logging.info("New best model saved with MAE: {:.4f}".format(min_mae))
             
@@ -218,7 +257,7 @@ class Engine:
 if __name__ == "__main__":
     args = get_parser()
     config = load_config(args.config)
-
+    logg(config['training']['log_file'])
     dataset = FSC147(
         config = config,
         split = "train"
