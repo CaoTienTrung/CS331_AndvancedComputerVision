@@ -21,6 +21,7 @@ import pickle
 from imgaug.augmentables import Keypoint, KeypointsOnImage
 from transformers import CLIPTokenizer
 import torchvision.transforms.functional as F
+from groundingDino import GetExampler
 # import utils.debug_utils
 MAX_HW = 384
 IM_NORM_MEAN = [0.485, 0.456, 0.406]
@@ -210,6 +211,7 @@ class ObjectCount(Dataset):
             for line in f:
                 self.cls_dict[line.strip().split('\t')[0]] = line.strip().split('\t')[1]
 
+
     def __len__(self):
         return len(self.im_list)
 
@@ -300,10 +302,10 @@ class ObjectCount(Dataset):
                         imgs_info[3]['img_attention_map']
 
             img, den_map, img_attn_map = self.train_transform_density(out_img, den_map, img_attn_map)
-            return img, den_map, prompt, prompt_attn_mask, img_attn_map
+            return img, den_map, prompt, prompt_attn_mask, img_attn_map, im_path
         else:
             img = img.resize((384, 384), Image.Resampling.BICUBIC)
-            return self.transform(img), len(pts), prompt, prompt_attn_mask, os.path.basename(im_path).split('.')[0]
+            return self.transform(img), len(pts), prompt, prompt_attn_mask, os.path.basename(im_path).split('.')[0], im_path
             # sample['image'].float(), sample['gt_map'], sample['boxes'], sample['pos'], text
 
     def train_transform_density(self, img, den_map, img_attention_map):
@@ -333,8 +335,10 @@ class ObjectCount(Dataset):
         return self.transform(img), torch.from_numpy(den_map.copy()).float().unsqueeze(0), torch.from_numpy(img_attention_map.copy()).float().unsqueeze(0)
 
 
+get_exampler = GetExampler()
+
 def collate_fn_train_object_count(batch):
-    img, den_map, prompt, prompt_attn_mask, img_attn_map = zip(*batch)
+    img, den_map, prompt, prompt_attn_mask, img_attn_map, im_path = zip(*batch)
 
     return {
         'image': torch.stack(img, 0),
@@ -345,7 +349,7 @@ def collate_fn_train_object_count(batch):
     }
 
 def collate_fn_test_object_count(batch):
-    img, batch_cnt, prompt, prompt_attn_mask, img_name = zip(*batch)
+    img, batch_cnt, prompt, prompt_attn_mask, img_name, im_path = zip(*batch)
     batch_cnt = torch.tensor(batch_cnt)
     return {
         'image': torch.stack(img, 0),
