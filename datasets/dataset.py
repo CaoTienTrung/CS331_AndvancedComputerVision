@@ -302,7 +302,8 @@ class ObjectCount(Dataset):
             img, den_map, img_attn_map = self.train_transform_density(out_img, den_map, img_attn_map)
             return img, den_map, prompt, prompt_attn_mask, img_attn_map
         else:
-            return self.transform(img), den_map, prompt, prompt_attn_mask, os.path.basename(im_path).split('.')[0]
+            img = img.resize((384, 384), Image.Resampling.BICUBIC)
+            return self.transform(img), len(pts), prompt, prompt_attn_mask, os.path.basename(im_path).split('.')[0]
             # sample['image'].float(), sample['gt_map'], sample['boxes'], sample['pos'], text
 
     def train_transform_density(self, img, den_map, img_attention_map):
@@ -344,13 +345,13 @@ def collate_fn_train_object_count(batch):
     }
 
 def collate_fn_test_object_count(batch):
-    img, den_map, prompt, prompt_attn_mask, img_name = zip(*batch)
-
+    img, batch_cnt, prompt, prompt_attn_mask, img_name = zip(*batch)
+    batch_cnt = torch.tensor(batch_cnt)
     return {
         'image': torch.stack(img, 0),
-        'density': torch.stack(den_map, 0),
+        'batch_cnt': batch_cnt,
         'prompt_attn_mask': torch.stack(prompt_attn_mask, 0),
-        'img_name': torch.stack(img_name, 0),
+        'img_name': img_name,
         'text': prompt
     }
 

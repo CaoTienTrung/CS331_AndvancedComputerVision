@@ -179,7 +179,7 @@ class Engine:
 
         for batch in progress_bar:
             imgs = batch['image'].to(self.device)
-            gt_density = batch['density'].to(self.device)
+            batch_count = batch['batch_cnt'].to(self.device)
             img_name = batch['img_name']
             prompt_atten_mask = batch['prompt_attn_mask'].to(self.device)
             text = batch['text']
@@ -191,30 +191,13 @@ class Engine:
                     coop_require_grad=False
                 )
 
-
-            mask = np.random.binomial(n=1, p=0.8, size=[384, 384])
-            masks = np.tile(mask, (output.shape[0], 1))
-            masks = masks.reshape(output.shape[0], 384, 384)
-            masks = torch.from_numpy(masks).to(self.device)
-            mse_loss = self.loss(output, gt_density)
-
-            mse_loss = (mse_loss * masks / (384 * 384)).sum() / output.shape[0]
-
-            rank_loss = self.rank_loss(
-                extra_out['patch_embedding_contrast'],
-                extra_out['class_text_embedding'],
-                gt_density.detach().clone()
-            )
-
-            loss = mse_loss + 0.01 * rank_loss
-            # Update information of MAE and RMSE
             batch_mae = 0
 
             batch_rmse = 0
             gt_sum = 0
             for i in range(output.shape[0]):
                 pred_cnt = torch.sum(output[i] / SCALE_FACTOR).item()
-                gt_cnt = torch.sum(gt_density[i] / SCALE_FACTOR).item()
+                gt_cnt = batch_count[i].item()
                 cnt_err = abs(pred_cnt - gt_cnt)
                 gt_sum += gt_cnt
                 batch_mae += cnt_err
@@ -234,7 +217,6 @@ class Engine:
 
             progress_bar.set_postfix(
                 {
-                'batch_loss': loss.item(),
                 'batch_mae': batch_mae,
                 'batch_rmse': batch_rmse
                 })

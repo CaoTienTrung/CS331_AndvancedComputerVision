@@ -115,3 +115,20 @@
 2025-12-11 12:53:03,864 - Loss: 0.0434, MSE Loss: 0.0391, Rank Loss: 0.4219, MAE: 51.6568, RMSE: 51.6568
 2025-12-11 12:53:03,953 - Loss: 0.1245, MSE Loss: 0.1113, Rank Loss: 1.3149, MAE: 3.0948, RMSE: 3.0948
 2025-12-11 12:56:05,941 - Epoch 1/10
+2025-12-13 12:14:04,879 - Epoch 1/10
+2025-12-13 12:16:27,486 - Epoch 1/10
+2025-12-13 12:16:44,423 - Epoch 1/10
+2025-12-13 12:17:38,355 - Epoch 1/10
+2025-12-13 12:21:47,401 - Train epoch done | epoch MAE: 870.6161, epoch RMSE: 2439.7558
+2025-12-13 12:26:27,861 - Epoch 1/10
+2025-12-13 12:30:37,873 - Train epoch done | epoch MAE: 1108.8383, epoch RMSE: 3247.8690
+2025-12-13 12:34:17,170 - Epoch 1/10
+2025-12-13 12:38:28,584 - Train epoch done | epoch MAE: 1110.9398, epoch RMSE: 3137.9738
+2025-12-13 12:39:38,744 - Epoch 1/10
+2025-12-13 12:43:49,377 - Train epoch done | epoch MAE: 780.7594, epoch RMSE: 2322.5214
+2025-12-13 12:44:50,154 - Epoch 1/10
+2025-12-13 12:48:58,356 - Train epoch done | epoch MAE: 1140.0578, epoch RMSE: 3256.4550
+2025-12-13 12:49:25,292 - Eval epoch done | epoch MAE: 48.6345, epoch RMSE: 129.1827
+2025-12-13 12:49:26,061 - Saved model checkpoint to checkpoint.pth
+2025-12-13 12:49:26,061 - New best model saved with MAE: 48.6345
+2025-12-13 12:49:26,061 - Epoch 2/10
