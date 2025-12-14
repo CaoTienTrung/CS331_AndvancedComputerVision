@@ -27,7 +27,7 @@ from typing import List, Tuple
 
 from .GroundingDINO.groundingdino.util.inference import (
     load_model,
-    # load_image,
+    load_image,
     predict,
     annotate
 )
@@ -190,18 +190,18 @@ def random_crop(im_h, im_w, crop_h, crop_w):
 
 
 
-def load_image(image_path: str) -> Tuple[np.array, torch.Tensor]:
-    transform = T.Compose(
-        [
-            T.RandomResize([800], max_size=1333),
-            T.ToTensor(),
-            T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-        ]
-    )
-    image_source = Image.open(image_path).convert("RGB")
-    image = np.asarray(image_source)
-    image_transformed, _ = transform(image_source, None)
-    return image, image_transformed
+# def load_image(image_path: str) -> Tuple[np.array, torch.Tensor]:
+#     transform = T.Compose(
+#         [
+#             T.RandomResize([800], max_size=1333),
+#             T.ToTensor(),
+#             T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+#         ]
+#     )
+#     image_source = Image.open(image_path).convert("RGB")
+#     image = np.asarray(image_source)
+#     image_transformed, _ = transform(image_source, None)
+#     return image, image_transformed
 
 class ObjectCount(Dataset):
     def __init__(self, config, split = 'train'): # root, crop_size, downsample_ratio, method='train', concat_size=224
@@ -327,17 +327,15 @@ class ObjectCount(Dataset):
                         imgs_info[3]['img_attention_map']
 
             img, den_map, img_attn_map = self.train_transform_density(out_img, den_map, img_attn_map)
-            # img_np, img_gd = load_image(im_path)          # img_gd là Tensor (3,H,W)
+            img_src, img_gd = load_image(im_path) 
             # img_gd = TF.resize(img_gd, (384, 384))        # resize Tensor
             # img_gd = img_gd.float()
-            return img, den_map, prompt, prompt_attn_mask, img_attn_map, im_path
+            return img, den_map, prompt, prompt_attn_mask, img_attn_map, img_gd, img_src
         else:
             img = img.resize((384, 384), Image.Resampling.BICUBIC)
-            # img_np, img_gd = load_image(im_path)          # img_gd là Tensor (3,H,W)
-            # img_gd = TF.resize(img_gd, (384, 384))        # resize Tensor
-            # img_gd = img_gd.float()
-            # img_gd = img_gd.float()
-            return self.transform(img), len(pts), prompt, prompt_attn_mask, os.path.basename(im_path).split('.')[0], im_path
+            img_src, img_gd = load_image(im_path)          # img_gd là Tensor (3,H,W)
+            
+            return self.transform(img), len(pts), prompt, prompt_attn_mask, os.path.basename(im_path).split('.')[0], img_gd, img_src
             # sample['image'].float(), sample['gt_map'], sample['boxes'], sample['pos'], text
 
     def train_transform_density(self, img, den_map, img_attention_map):
@@ -368,22 +366,20 @@ class ObjectCount(Dataset):
 
 
 def collate_fn_train_object_count(batch):
-    img, den_map, prompt, prompt_attn_mask, img_attn_map, img_path = zip(*batch)
+    img, den_map, prompt, prompt_attn_mask, img_attn_map, img_gd, img_src = zip(*batch)
 
-
-    # batch_crops = get_exampler.get_highest_score_crop(img, prompt, box_threshold=BOX_THRESHOLD, keep_area=KEEP_AREA, device='cuda')
-    # img_gd = torch.stack(img_gd, 0).float() 
     return {
         'image': torch.stack(img, 0),
         'density': torch.stack(den_map, 0),
         'prompt_attn_mask': torch.stack(prompt_attn_mask, 0),
-        'img_path': img_path,
+        'img_gd': img_gd,
+        'img_src': img_src,
         'img_attn_map': torch.stack(img_attn_map, 0),
         'text': prompt
     }
 
 def collate_fn_test_object_count(batch):
-    img, batch_cnt, prompt, prompt_attn_mask, img_name, img_path = zip(*batch)
+    img, batch_cnt, prompt, prompt_attn_mask, img_name, img_gd, img_src = zip(*batch)
 
    # batch_crops = get_exampler.get_highest_score_crop(img, prompt, box_threshold=BOX_THRESHOLD, keep_area=KEEP_AREA, device='cuda')
 
@@ -392,7 +388,8 @@ def collate_fn_test_object_count(batch):
         'image': torch.stack(img, 0),
         'batch_cnt': batch_cnt,
         'prompt_attn_mask': torch.stack(prompt_attn_mask, 0),
-        'img_path': img_path,
+        'img_gd': img_gd,
+        'img_src': img_src,
         'img_name': img_name,
         'text': prompt
     }

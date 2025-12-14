@@ -35,7 +35,7 @@ def test_crop_best():
     get_exampler = GetExampler()
     
     curr = time.time()
-    crops = get_exampler.get_highest_score_crop(
+    crops = get_exampler.get_highest_score_crop_img_path_ver(
         img_path=img_list,
         captions=["strawberry", "penguins"]
     )
