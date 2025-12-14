@@ -342,8 +342,8 @@ def test_crop_best():
             print("No box detected for image", i)
     print("Time per batch:", (time.time() - curr))
 
-if __name__ == "__main__":
-    # test()
-    # test_normal()
-    # test_crop_best()
-    test_predict_batch()
+# if __name__ == "__main__":
+#     # test()
+#     # test_normal()
+#     # test_crop_best()
+#     test_predict_batch()

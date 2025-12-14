@@ -1,62 +1,83 @@
 #!/bin/bash
-
-# Thư mục Dataset
-if [ ! -d "Dataset" ]; then
-    echo "Creating Dataset directory..."
-    mkdir Dataset
-else
-    echo "Dataset directory already exists. Skipping creation."
-fi
-
-#  python -m pip install --no-build-isolation -e . 
-echo "Installing required packages..."
-
-python -m pip install --index-url https://download.pytorch.org/whl/cu121   torch==2.3.1 torchvision==0.18.1 torchaudio==2.3.1 --quiet
-pip install gdown opencv-python scipy imgaug "numpy<2" git+https://github.com/openai/CLIP.git einops "supervision>=0.22.0" transformers addict yapf pycocotools timm roboflow --quiet
+set -euo pipefail
 
 ROOT_DIR="$(pwd)"
+DATASET_DIR="${ROOT_DIR}/Dataset"
+DINO_PARENT="${ROOT_DIR}/CountingObject/datasets"
+DINO_DIR="${DINO_PARENT}/GroundingDINO"
 
-cd ./CountingObject/datasets 
-if [ ! -d "${ROOT_DIR}/GroundingDINO" ]; then
-    echo "Creating Dataset directory in datasets..."
-    cd ./CountingObject/datasets 
-    git clone https://github.com/IDEA-Research/GroundingDINO.git
-    cd GroundingDINO
-    python -m pip install --no-build-isolation -e . 
-    cd "${ROOT_DIR}"
+echo "[1/6] Create Dataset directory..."
+mkdir -p "${DATASET_DIR}"
+
+echo "[2/6] Install Python deps..."
+python -m pip install -U pip setuptools wheel ninja
+
+python -m pip install --index-url https://download.pytorch.org/whl/cu121 \
+  torch==2.3.1 torchvision==0.18.1 torchaudio==2.3.1
+
+python -m pip install \
+  gdown opencv-python scipy imgaug "numpy<2" \
+  git+https://github.com/openai/CLIP.git \
+  einops "supervision>=0.22.0" transformers addict yapf pycocotools timm roboflow
+
+echo "[3/6] Export CUDA + runtime libs..."
+export CUDA_HOME=/usr/local/cuda
+export PATH="$CUDA_HOME/bin:$PATH"
+export LD_LIBRARY_PATH="$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}"
+
+# Add torch/lib so extension can find libc10.so at runtime
+TORCH_LIB="$(python - <<'EOF'
+import os, torch
+print(os.path.join(os.path.dirname(torch.__file__), "lib"))
+EOF
+)"
+export LD_LIBRARY_PATH="$TORCH_LIB:$LD_LIBRARY_PATH"
+
+# Make GroundingDINO importable without pip -e (simple + stable)
+export PYTHONPATH="${DINO_DIR}:${PYTHONPATH:-}"
+
+echo "[4/6] Clone GroundingDINO if missing..."
+mkdir -p "${DINO_PARENT}"
+if [ ! -d "${DINO_DIR}/.git" ]; then
+  git clone https://github.com/IDEA-Research/GroundingDINO.git "${DINO_DIR}"
 else
-    echo "GROUNDINGDINO directory already exists. Skipping creation."
+  echo "GroundingDINO already exists: ${DINO_DIR}"
 fi
 
-# Tải file bằng gdown
-echo "Downloading file..."
-gdown --id 1ymDYrGs9DSRicfZbSCDiOu0ikGDh5k6S -O Dataset/myfile.zip
+echo "[5/6] Build GroundingDINO CUDA extension (_C)..."
+cd "${DINO_DIR}"
+python setup.py build_ext --inplace
 
-# Giải nén file (Windows Git Bash có unzip?)
-if command -v unzip &> /dev/null
-then
-    echo "Extracting zip file..."
-    unzip -o Dataset/myfile.zip -d Dataset
-    echo "Deleting zip file..."
-    rm Dataset/myfile.zip
+# Quick sanity check
+python - <<'EOF'
+import groundingdino
+from groundingdino import _C
+print("groundingdino:", groundingdino.__file__)
+print("_C:", _C.__file__)
+EOF
+
+cd "${ROOT_DIR}"
+
+echo "[6/6] Download datasets..."
+gdown --id 1ymDYrGs9DSRicfZbSCDiOu0ikGDh5k6S -O "${DATASET_DIR}/myfile.zip"
+
+if command -v unzip &> /dev/null; then
+  unzip -o "${DATASET_DIR}/myfile.zip" -d "${DATASET_DIR}"
+  rm -f "${DATASET_DIR}/myfile.zip"
 else
-    echo "unzip command not found, skipping extraction."
+  echo "unzip not found, skipping extraction."
 fi
 
-# FSC-147-S.json
-curl -L -o Dataset/FSC-147-S.json \
-https://raw.githubusercontent.com/cha15yq/T2ICount/main/FSC-147-S.json
+curl -L -o "${DATASET_DIR}/FSC-147-S.json" \
+  https://raw.githubusercontent.com/cha15yq/T2ICount/main/FSC-147-S.json
 
-# ImageClasses_FSC147.txt
-curl -L -o Dataset/ImageClasses_FSC147.txt \
-https://raw.githubusercontent.com/cvlab-stonybrook/LearningToCountEverything/master/data/ImageClasses_FSC147.txt
+curl -L -o "${DATASET_DIR}/ImageClasses_FSC147.txt" \
+  https://raw.githubusercontent.com/cvlab-stonybrook/LearningToCountEverything/master/data/ImageClasses_FSC147.txt
 
-# annotation_FSC147_384.json
-curl -L -o Dataset/annotation_FSC147_384.json \
-https://raw.githubusercontent.com/cvlab-stonybrook/LearningToCountEverything/master/data/annotation_FSC147_384.json
+curl -L -o "${DATASET_DIR}/annotation_FSC147_384.json" \
+  https://raw.githubusercontent.com/cvlab-stonybrook/LearningToCountEverything/master/data/annotation_FSC147_384.json
 
-# Train_Test_Val_FSC_147.json
-curl -L -o Dataset/Train_Test_Val_FSC_147.json \
-https://raw.githubusercontent.com/cvlab-stonybrook/LearningToCountEverything/master/data/Train_Test_Val_FSC_147.json
+curl -L -o "${DATASET_DIR}/Train_Test_Val_FSC_147.json" \
+  https://raw.githubusercontent.com/cvlab-stonybrook/LearningToCountEverything/master/data/Train_Test_Val_FSC_147.json
 
-echo "Done!"
+echo "Done."
