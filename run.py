@@ -12,7 +12,7 @@ import torchvision.transforms.functional as VF
 
 warnings.filterwarnings("ignore")
 
-SCALE_FACTOR = 1.0
+SCALE_FACTOR = 60
 
 class Engine:
     def __init__(self, config):
@@ -83,7 +83,7 @@ class Engine:
 
         for batch in progress_bar:
             imgs = batch['image'].to(self.device)
-            gt_density = batch['density'].to(self.device)
+            gt_density = batch['density'].to(self.device) * SCALE_FACTOR
             img_gd = batch['img_gd']
             img_src = batch['img_src']
             text = batch['text']
