@@ -42,6 +42,42 @@ def sliding_window(image, window_size = (384, 384), stride = 128):
         intervals.append([i, i + window_size[1]])
     return np.array(patches).transpose(0,3,1,2), np.array(intervals)
 
+def window_composite(patches, window_size = (384, 384), stride = 128):
+    """
+    Composite patches (from sliding window) into an image.
+    for overlapping regions, average the values.
+    Args:
+        patches: [N, C, 384, 384]
+        window_size: (384, 384)
+        stride: the stride used in sliding window
+    Returns:
+        image: [1, 384, W ]
+    """
+    image = None
+    patch_h, patch_w = window_size
+    for i, patch in enumerate(patches):
+        if i == 0:
+            image = patch
+            # cv2.imwrite(f"debug/out/patch{i}.jpg", patch)
+            # cv2.imwrite(f"debug/out/image{i}.jpg", image)
+
+        else:
+            blend_width = patch_w - stride
+            # cv2.imwrite(f"debug/out/patch{i}.jpg", patch)
+            prev_to_blend = image[:, :, -blend_width:]
+            # cv2.imwrite(f"debug/out/prev_to_blend{i}.jpg", prev_to_blend)
+            next_to_blend = patch[:, :, :blend_width]
+            # cv2.imwrite(f"debug/out/next_to_blend{i}.jpg", next_to_blend)
+            blend_factor = torch.sigmoid(torch.tensor(np.linspace(-3, 3, blend_width))).to(image.device)
+            blend = (1-blend_factor) * prev_to_blend + blend_factor * next_to_blend
+            # cv2.imwrite(f"debug/out/blend{i}.jpg", blend)
+            image[:, :, -blend_width:] = blend
+            # cv2.imwrite(f"debug/out/image{i}.jpg", image)
+            patch_remain = patch[:, :, blend_width:]
+            #log all intermediate results
+            image = torch.cat([image, patch_remain], dim = -1)
+    return image
+
 class Engine:
     def __init__(self, config):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -259,6 +295,10 @@ class Engine:
 
             examplers = torch.stack(fixed, dim=0).to(self.device)
 
+            N = patches.shape[0]
+            text = [text[0]] * N
+            examplers = examplers.repeat(N, 1, 1, 1)
+
             self.optimizer.zero_grad()
             with torch.no_grad():
                 output, extra_out = self.model(
@@ -268,10 +308,12 @@ class Engine:
                     examplers=examplers
                 )
 
-            output = output.squeeze(1)
+            output = output.unsqueeze(1)
             # crop to original width
+            output = window_composite(output, stride=128)
+            output = output.squeeze(1)
             output = output[:, :, :raw_w]
-    
+
             batch_mae = 0
 
             batch_rmse = 0
@@ -359,7 +401,7 @@ if __name__ == "__main__":
     )
     val_loader = torch.utils.data.DataLoader(
         val_dataset,
-        batch_size=config['training']['batch_size'],
+        batch_size=1,
         shuffle=False,
         collate_fn=collate_fn_test_object_count,
         num_workers=config['training'].get('num_workers', 4)
@@ -371,7 +413,7 @@ if __name__ == "__main__":
     )
     test_loader = torch.utils.data.DataLoader(
         test_dataset,
-        batch_size=config['training']['batch_size'],
+        batch_size=1,
         shuffle=False,
         collate_fn=collate_fn_test_object_count,
         num_workers=config['training'].get('num_workers', 4)

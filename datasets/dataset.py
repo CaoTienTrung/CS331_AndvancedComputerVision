@@ -235,7 +235,7 @@ class ObjectCount(Dataset):
         with open(os.path.join(root, 'ImageClasses_FSC147.txt'), "r", encoding="utf-8") as f:
             for line in f:
                 self.cls_dict[line.strip().split('\t')[0]] = line.strip().split('\t')[1]
-
+        # self.im_list = self.im_list[:int(0.01 * len(self.im_list))]
 
     def __len__(self):
         return len(self.im_list)
@@ -336,7 +336,7 @@ class ObjectCount(Dataset):
             img = self.transform(img)   
             img_src, img_gd = load_image(im_path)          # img_gd là Tensor (3,H,W)
             
-            return self.transform(img), len(pts), prompt, prompt_attn_mask, os.path.basename(im_path).split('.')[0], img_gd, img_src
+            return img, len(pts), prompt, prompt_attn_mask, os.path.basename(im_path).split('.')[0], img_gd, img_src
             # sample['image'].float(), sample['gt_map'], sample['boxes'], sample['pos'], text
 
     def train_transform_density(self, img, den_map, img_attention_map):
