@@ -12,7 +12,35 @@ import torchvision.transforms.functional as VF
 
 warnings.filterwarnings("ignore")
 
-SCALE_FACTOR = 60
+SCALE_FACTOR = 60.0
+
+def sliding_window(image, window_size = (384, 384), stride = 128):
+    """
+    Split an image into overlapping patches.
+    Args:
+        image: [3, 384, W], W >= 384
+        window_size: (384, 384)
+        stride: 128
+    Returns:
+        patches: [N, 3, 384, 384]
+        intervals: [[start, end], [start, end], ...]
+    """
+    #right padding to make sure the image can be divided by stride
+    if isinstance(image, torch.Tensor):
+        if image.shape[0] == 1:
+            image = image.squeeze(0)
+        image = image.permute(1, 2, 0)
+        image = image.detach().cpu().numpy()
+    image = np.pad(image, ((0, 0), (0, stride - image.shape[1] % stride), (0, 0)), 'constant')
+    h, w, _ = image.shape
+    assert h == 384, "FSC-147 assume image height is 384."
+    patches = []
+    intervals = []
+    for i in range(0, w - window_size[1] + 1, stride):
+        patch = image[:, i:i + window_size[1], :]
+        patches.append(patch)
+        intervals.append([i, i + window_size[1]])
+    return np.array(patches).transpose(0,3,1,2), np.array(intervals)
 
 class Engine:
     def __init__(self, config):
@@ -203,10 +231,17 @@ class Engine:
 
         for batch in progress_bar:
             imgs = batch['image'].to(self.device)
-            batch_count = batch['batch_cnt'].to(self.device)
+            batch_count = batch['batch_cnt'].to(self.device) 
             text = batch['text']
             img_gd = batch['img_gd']
             img_src = batch['img_src']
+
+
+            raw_h, raw_w = imgs.shape[2:]
+            patches, _ = sliding_window(imgs, stride=128)
+            # covert to batch
+            patches = torch.from_numpy(patches).float().to(self.device)
+
             examplers = self.get_exampler.get_highest_score_crop(img_gd, img_src, text, box_threshold=BOX_THRESHOLD, keep_area=KEEP_AREA, device=self.device)
 
             fixed = []
@@ -227,12 +262,16 @@ class Engine:
             self.optimizer.zero_grad()
             with torch.no_grad():
                 output, extra_out = self.model(
-                    imgs,
+                    patches,
                     text,
                     coop_require_grad=self.config['training'].get('coop_training', False),
                     examplers=examplers
                 )
 
+            output = output.squeeze(1)
+            # crop to original width
+            output = output[:, :, :raw_w]
+    
             batch_mae = 0
 
             batch_rmse = 0
