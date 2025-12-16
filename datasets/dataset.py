@@ -336,11 +336,6 @@ class ObjectCount(Dataset):
         else:
             # img = img.resize((384, 384), Image.Resampling.BICUBIC)
             img_src, img_gd = load_image(im_path)          # img_gd là Tensor (3,H,W)
-            
-            # den_map = np.load(den_path)
-            # cnt = torch.sum(torch.tensor(den_map)).item()
-            # # print("cnt : ", cnt)
-            # # print("pts : ", len(pts))
 
             return self.transform(img), len(pts), prompt, prompt_attn_mask, os.path.basename(im_path).split('.')[0], img_gd, img_src
             # sample['image'].float(), sample['gt_map'], sample['boxes'], sample['pos'], text

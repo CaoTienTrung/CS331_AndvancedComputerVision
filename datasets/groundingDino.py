@@ -23,6 +23,7 @@ import supervision as sv
 import numpy as np
 from torchvision.ops import box_convert
 from typing import List, Tuple
+from torchvision import transforms
 
 DIR_WEIGHTS = os.path.join(HOME, "CountingObject/datasets/pretrained_models")
 CONFIG_PATH = os.path.join(HOME, "CountingObject/datasets/GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py")
@@ -35,6 +36,12 @@ class GetExampler:
         self.download_model()
         self.model = load_model(CONFIG_PATH, WEIGHTS_PATH, device)
         self.model = self.model.to(device)
+
+
+        self.transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        ])
 
     def download_model(self):
         os.makedirs(DIR_WEIGHTS, exist_ok=True)
@@ -261,9 +268,15 @@ class GetExampler:
             max_idx = torch.argmax(scores).item()
             x1, y1, x2, y2 = xyxy[max_idx].int().tolist()
             crop = image_sources[i][y1:y2, x1:x2, :]
-            batch_crops.append(crop)
 
-        return batch_crops
+            # resize crop
+            crop = cv2.resize(crop, (384, 384))
+            crop = self.transform(Image.fromarray(crop))
+
+            batch_crops.append(crop)
+        
+        # print("Type of batch crops:", type(batch_crops[0]))
+        return torch.stack(batch_crops, dim = 0) # to do : transform crop img truoc khi vao model 
 
 
         

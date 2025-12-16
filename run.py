@@ -223,12 +223,8 @@ class Engine:
             img_src = batch['img_src']
             text = batch['text']
 
-            examplers = self.get_exampler.get_highest_score_crop(img_gd, img_src, text, box_threshold=BOX_THRESHOLD, keep_area=KEEP_AREA, device=self.device)
-            # print("Type of exampler:", type(examplers[0]))
+            examplers = self.get_exampler.get_highest_score_crop(img_gd, img_src, text, box_threshold=BOX_THRESHOLD, keep_area=KEEP_AREA, device=self.device).to(self.device)
 
-            examplers = get_exampler_tensor_stack(examplers, self.device)
-            
-            # examplers = torch.stack(examplers, dim = 0).to(self.device)
 
             self.optimizer.zero_grad()
 
@@ -256,7 +252,11 @@ class Engine:
                 gt_density.detach().clone()
             )
 
-            loss = mse_loss + 0.01 * rank_loss
+            if self.contrast_pre_epoch >= self.current_epoch:
+
+                loss = mse_loss + 0.01 * rank_loss
+            else:
+                loss = rank_loss
             # if self.current_epoch <= self.contrast_pre_epoch:
             #     loss = rank_loss 
                 
@@ -309,6 +309,8 @@ class Engine:
         )
     
 
+
+
             
 
 
@@ -340,11 +342,8 @@ class Engine:
             outputs = []
             Np = cropped_imgs.size(0)
             with torch.set_grad_enabled(False):
-                examplers = self.get_exampler.get_highest_score_crop(img_gd, img_src, text, box_threshold=BOX_THRESHOLD, keep_area=KEEP_AREA, device=self.device)
-                
-                # print("Type of exampler:", type(examplers[0]))
-
-                examplers = get_exampler_tensor_stack(examplers, self.device)
+                examplers = self.get_exampler.get_highest_score_crop(img_gd, img_src, text, box_threshold=BOX_THRESHOLD, keep_area=KEEP_AREA, device=self.device).to(self.device)
+            
 
                 if examplers.size(0) == 1 and Np > 1:
                     examplers = examplers.repeat(Np, 1, 1, 1)
