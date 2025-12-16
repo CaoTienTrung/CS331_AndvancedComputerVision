@@ -308,7 +308,78 @@ class Engine:
             )
         )
     
+    def eval_batch(self, trainloader):
+        self.model.eval()
 
+        progress_bar = tqdm(trainloader, desc="Evaluating", leave=False)
+
+        total_abs_err = 0.0      # tổng |pred - gt|
+        total_sq_err  = 0.0      # tổng (pred - gt)^2
+        total_samples = 0        # tổng số ảnh
+
+        for batch in progress_bar:
+            imgs = batch['image'].to(self.device)
+            batch_cnt = batch['batch_cnt']
+            img_gd = batch['img_gd']
+            img_src = batch['img_src']
+            text = batch['text']
+
+            examplers = self.get_exampler.get_highest_score_crop(img_gd, img_src, text, box_threshold=BOX_THRESHOLD, keep_area=KEEP_AREA, device=self.device).to(self.device)
+
+
+            self.optimizer.zero_grad()
+            with torch.no_grad():
+                output, extra_out = self.model(
+                    imgs,
+                    text,
+                    coop_require_grad=self.config['training'].get('coop_training', False),
+                    examplers=examplers
+                )
+
+            
+
+            
+            # Update information of MAE and RMSE
+            batch_mae = 0
+
+            batch_rmse = 0
+
+
+            gt_sum = 0
+            for i in range(output.shape[0]):
+                pred_cnt = torch.sum(output[i] / SCALE_FACTOR).item()
+                gt_cnt = batch_cnt[i]
+                cnt_err = abs(pred_cnt - gt_cnt)
+                gt_sum += gt_cnt
+                batch_mae += cnt_err
+                batch_rmse += cnt_err ** 2
+
+                total_abs_err += cnt_err
+                total_sq_err  += cnt_err ** 2
+                total_samples += 1
+
+            
+            batch_mae /= output.shape[0]
+            batch_rmse /= output.shape[0]
+            batch_rmse = math.sqrt(batch_rmse)
+
+
+
+            progress_bar.set_postfix(
+                {
+                    'batch_mae': batch_mae,
+                    'batch_rmse': batch_rmse,
+                })
+        
+        epoch_mae  = total_abs_err / total_samples
+        epoch_rmse = math.sqrt(total_sq_err / total_samples)
+
+        logging.info(
+            "Eval epoch done | epoch MAE: {:.4f}, epoch RMSE: {:.4f}".format(
+                epoch_mae, epoch_rmse
+            )
+        )
+        return epoch_mae, epoch_rmse
 
 
             
@@ -392,12 +463,12 @@ class Engine:
             self.current_epoch = epoch
             logging.info("Epoch {}/{}".format(epoch+1, num_epochs))
             self.train(train_loader)
-            epoch_mae, epoch_rmse = self.evaluate(eval_loader)
+            epoch_mae, epoch_rmse = self.eval_batch(eval_loader)
 
-            if epoch_mae < self.min_mae:
-                self.min_mae = epoch_mae
+            if (epoch_mae + epoch_rmse) < self.min_mae:
+                self.min_mae = epoch_mae + epoch_rmse
                 self.save(epoch+1, self.min_mae)
-                logging.info("New best model saved with MAE: {:.4f}".format(self.min_mae))
+                logging.info("New best model saved with min (MAE + RMSE) : {:.4f}".format(self.min_mae))
             
             self.schedular.step()
     
