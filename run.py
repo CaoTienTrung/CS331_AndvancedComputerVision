@@ -308,6 +308,8 @@ class Engine:
             )
         )
     
+    
+    
     def eval_batch(self, trainloader):
         self.model.eval()
 
@@ -381,7 +383,9 @@ class Engine:
         )
         return epoch_mae, epoch_rmse
 
-
+    def eval_test(self, testloader):
+        self.reload()
+        return self.eval_batch(testloader)
             
 
 

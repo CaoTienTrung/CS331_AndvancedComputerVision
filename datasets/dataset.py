@@ -185,6 +185,8 @@ class FSC147(Dataset):
 
             return sample['image'].float(), sample['gt_map'], text, im_id,  img_gd, img_src
 
+
+
 def collate_fn(batch):
     img, den_map, prompt, id,  img_gd, img_src = zip(*batch)
 
