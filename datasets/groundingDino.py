@@ -179,6 +179,8 @@ class GetExampler:
             x1, y1, x2, y2 = xyxy[max_idx].int().tolist()
 
             crop = imag_source[i][y1:y2, x1:x2, :]
+
+            # crop = cv2.resize(crop, (384, 384))
             batch_crops.append(crop)
 
         return batch_crops
@@ -278,6 +280,67 @@ class GetExampler:
         # print("Type of batch crops:", type(batch_crops[0]))
         return torch.stack(batch_crops, dim = 0) # to do : transform crop img truoc khi vao model 
 
+    def get_highest_score_crop_pre_extracted(self, images, image_sources, captions, box_threshold=0.35, keep_area=0.4, device='cuda'):
+        boxes_list, scores_list = self.predict_batch(
+            images=images,
+            captions=captions,
+            box_threshold=box_threshold,
+            device=device
+        )
+
+        batch_crops = []
+        for i in range(len(images)):
+            boxes = boxes_list[i]   # (N,4) normalized cxcywh
+            scores = scores_list[i] # (N,)
+
+            if boxes.numel() == 0:
+                batch_crops.append(None)
+                continue
+
+            H, W, _ = image_sources[i].shape
+            img_area = float(W * H)
+
+            # 1) scale -> pixel
+            scale = torch.tensor([W, H, W, H], dtype=boxes.dtype)
+            boxes_pix = boxes * scale  # (N,4) pixel cxcywh
+
+            # 2) cxcywh -> xyxy
+            xyxy = box_convert(boxes=boxes_pix, in_fmt="cxcywh", out_fmt="xyxy")  # (N,4)
+
+            # 3) clamp vào biên ảnh
+            xyxy[:, [0, 2]] = xyxy[:, [0, 2]].clamp(0, W - 1)
+            xyxy[:, [1, 3]] = xyxy[:, [1, 3]].clamp(0, H - 1)
+
+            # 4) tính area ratio
+            bw = (xyxy[:, 2] - xyxy[:, 0]).clamp(min=0)
+            bh = (xyxy[:, 3] - xyxy[:, 1]).clamp(min=0)
+            area = bw * bh
+            area_ratio = area / img_area
+
+            # 5) lọc theo keep_area + bỏ box “rỗng”
+            keep = (area_ratio <= keep_area) & (bw > 1) & (bh > 1)
+
+            boxes_pix = boxes_pix[keep]
+            xyxy = xyxy[keep]
+            scores = scores[keep]
+
+            if scores.numel() == 0:
+                batch_crops.append(None)
+                continue
+
+            # 6) giờ mới lấy max trên tập đã lọc
+            max_idx = torch.argmax(scores).item()
+            x1, y1, x2, y2 = xyxy[max_idx].int().tolist()
+            crop = image_sources[i][y1:y2, x1:x2, :]
+
+            # # resize crop
+            # crop = cv2.resize(crop, (384, 384))
+            # crop = self.transform(Image.fromarray(crop))
+
+            batch_crops.append(crop)
+        
+        # print("Type of batch crops:", type(batch_crops[0]))
+        return batch_crops
 
         
     # 1 function de return : anh co score cao nhat da crop

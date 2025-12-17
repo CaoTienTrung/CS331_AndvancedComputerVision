@@ -386,12 +386,6 @@ class Engine:
     def eval_test(self, testloader):
         self.reload()
         return self.eval_batch(testloader)
-            
-
-
-
-
-
 
     def evaluate(self, dataloader):
         batch_size = self.config['training'].get('batch_size', 4)
