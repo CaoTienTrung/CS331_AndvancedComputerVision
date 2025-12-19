@@ -1,4 +1,5 @@
 Dataset
 *.pth
 logs
-
+pre_extracted_path
+weight

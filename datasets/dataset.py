@@ -39,10 +39,14 @@ IM_NORM_STD = [0.229, 0.224, 0.225]
 BOX_THRESHOLD = 0
 KEEP_AREA = 0.4
 
+Normalize = transforms.Compose([   
+        transforms.ToTensor(),
+        transforms.Normalize(mean=IM_NORM_MEAN, std=IM_NORM_STD)
+        ])
 
 class FSC147(Dataset):
     def __init__(self, config,
-                 split:str):
+                 split:str , subset_scale: float = 1.0):
         """
         Parameters
         ----------
@@ -56,7 +60,7 @@ class FSC147(Dataset):
         self.data_dir = config['training']['data_dir'] 
         self.dataset_type = config['training']['dataset_type'] # FSC147 
         additional_prompt = config['training'].get('additional_prompt', False)
-        subset_scale = config['training'].get('subset_scale', 1.0)
+        subset_scale = subset_scale
 
         self.resize_val = config['training']['resize_val'] if split == 'val' else False
 
@@ -117,24 +121,28 @@ class FSC147(Dataset):
                 x2 = bbox[2][0]
                 y2 = bbox[2][1]
                 rects.append([y1, x1, y2, x2])
-
+            
             dots = np.array(anno['points'])
 
-            image = Image.open('{}/{}'.format(self.im_dir, im_id))
+            img_path = '{}/{}'.format(self.im_dir, im_id)
+            image = Image.open(img_path)
             image.load()
             density_path = self.gt_dir + '/' + im_id.split(".jpg")[0] + ".npy"
             density = np.load(density_path).astype('float32')   
             m_flag = 0
 
             sample = {'image':image,'lines_boxes':rects,'gt_density':density, 'dots':dots, 'id':im_id, 'm_flag': m_flag}
-
             sample = self.transform(sample)
-            if self.use_additional_prompt:
-                return sample['image'].float(), sample['gt_density'], sample['boxes'], sample['m_flag'], text, additional_prompt 
-            return sample['image'].float(), sample['gt_density'], sample['boxes'], sample['m_flag'], text
+
+            
+            # img, den_map, prompt, prompt_attn_mask, img_attn_map, img_gd, img_src
+            img_src, img_gd = load_image(img_path) 
+
+            return sample['image'].float(), sample['gt_density'], text, im_id, img_gd, img_src
         elif self.split == "test" or self.split == "test_coco" or self.split == "val_coco" or (self.split == "val" and not self.resize_val):
             dots = np.array(anno['points'])
-            image = Image.open('{}/{}'.format(self.im_dir, im_id))
+            img_path = '{}/{}'.format(self.im_dir, im_id)
+            image = Image.open(img_path)
             text = self.class_dict[im_id]
             image.load()
             W, H = image.size
@@ -166,8 +174,6 @@ class FSC147(Dataset):
                 bbox = transforms.Resize((64, 64))(bbox)
                 boxes.append(bbox.numpy())
 
-            boxes = np.array(boxes)
-            boxes = torch.Tensor(boxes)
 
             # Only for visualisation purpose, no need for ground truth density map indeed.
             gt_map = np.zeros((image.shape[1], image.shape[2]),dtype='float32')
@@ -176,10 +182,203 @@ class FSC147(Dataset):
             gt_map = ndimage.gaussian_filter(gt_map, sigma=(1, 1), order=0)
             gt_map = torch.from_numpy(gt_map)
             gt_map = gt_map * 60
-            
-            sample = {'image':image,'dots':dots, 'boxes':boxes, 'pos':rects, 'gt_map':gt_map}
-            return sample['image'].float(), sample['gt_map'], sample['boxes'], sample['pos'], text
 
+            sample = {'image':image,'dots':dots, 'boxes':boxes, 'pos':rects, 'gt_map':gt_map, 'id':im_id}
+
+            img_src, img_gd = load_image(img_path) 
+
+            return sample['image'].float(), sample['gt_map'], text, im_id,  img_gd, img_src
+
+
+class FSC147_pre_extracted(Dataset):
+    def __init__(self, config,
+                 split:str , subset_scale: float = 1.0):
+        """
+        Parameters
+        ----------
+        split : str, 'train', 'val' or 'test'
+        subset_scale : float, scale of the subset of the dataset to use
+        resize_val : bool, whether to random crop validation images to 384x384
+        """
+        assert split in ['train', 'val', 'test' , 'val_coco', 'test_coco']
+
+        #!HARDCODED Dec 25: 
+        self.data_dir = config['training']['data_dir'] 
+        self.dataset_type = config['training']['dataset_type'] # FSC147 
+        additional_prompt = config['training'].get('additional_prompt', False)
+        subset_scale = subset_scale
+
+        self.resize_val = config['training']['resize_val'] if split == 'val' else False
+
+        self.im_dir = os.path.join(self.data_dir,'images_384_VarV2')
+        self.gt_dir = os.path.join(self.data_dir, 'gt_density_map_adaptive_384_VarV2')
+        self.anno_file = os.path.join(self.data_dir,  f'annotation_FSC147_384.json')
+        self.data_split_file = os.path.join(self.data_dir, f'Train_Test_Val_FSC_147.json')
+        self.class_file = os.path.join(self.data_dir,f'ImageClasses_FSC147.txt')
+        self.extracted_dir = os.path.join(self.data_dir,'pre_extracted_path')
+
+        self.split = split
+        with open(self.data_split_file) as f:
+            data_split = json.load(f)
+
+        with open(self.anno_file) as f:
+            self.annotations = json.load(f)
+
+        self.idx_running_set = data_split[split]
+        # subsample the dataset
+        self.idx_running_set = self.idx_running_set[:int(subset_scale*len(self.idx_running_set))]
+
+        self.class_dict = {}
+        with open(self.class_file) as f:
+            for line in f:
+                key = line.split()[0]
+                val = line.split()[1:]
+                # concat word as string
+                val = ' '.join(val)
+                self.class_dict[key] = val
+        self.all_classes = list(set(self.class_dict.values()))
+        self.transform = None
+        if self.split == 'train' or (self.split == 'val' and self.resize_val):
+            use_aug = self.split == 'train'
+            self.transform = transforms.Compose([ResizeTrainImage(MAX_HW, self, aug=use_aug)])
+        random.shuffle(self.idx_running_set)
+
+        self.additional_prompt = None
+        self.use_additional_prompt = additional_prompt
+        if additional_prompt:
+            additional_prompt_path = "util/CLIP_caption.pkl"
+            with open(additional_prompt_path, 'rb') as f:
+                self.additional_prompt = pickle.load(f)
+        
+            
+    def __len__(self):
+        return len(self.idx_running_set)
+
+    def __getitem__(self, idx):
+        im_id = self.idx_running_set[idx]
+        anno = self.annotations[im_id]
+        text = self.class_dict[im_id]
+        if self.use_additional_prompt:
+            additional_prompt = self.additional_prompt[im_id]
+        bboxes = anno['box_examples_coordinates']
+        if self.split == 'train' or (self.split == 'val' and self.resize_val):
+            rects = list()
+            for bbox in bboxes:
+                x1 = bbox[0][0]
+                y1 = bbox[0][1]
+                x2 = bbox[2][0]
+                y2 = bbox[2][1]
+                rects.append([y1, x1, y2, x2])
+            
+            dots = np.array(anno['points'])
+
+            img_path = '{}/{}'.format(self.im_dir, im_id)
+            image = Image.open(img_path)
+            image.load()
+            density_path = self.gt_dir + '/' + im_id.split(".jpg")[0] + ".npy"
+            density = np.load(density_path).astype('float32')   
+            m_flag = 0
+
+            sample = {'image':image,'lines_boxes':rects,'gt_density':density, 'dots':dots, 'id':im_id, 'm_flag': m_flag}
+            sample = self.transform(sample)
+
+            
+            extracted_img_path = '{}/{}'.format(self.extracted_dir, im_id)
+            exampler = Image.open(extracted_img_path)
+            exampler.load()
+            W, H = image.size
+
+            new_H = 16*int(H/16)
+            new_W = 16*int(W/16)
+            scale_factor = float(new_W)/ W
+            exampler = transforms.Resize((new_H, new_W))(exampler)
+            exampler = Normalize(exampler)
+
+
+
+            return sample['image'].float(), sample['gt_density'], text, im_id, exampler
+        elif self.split == "test" or self.split == "test_coco" or self.split == "val_coco" or (self.split == "val" and not self.resize_val):
+            dots = np.array(anno['points'])
+            img_path = '{}/{}'.format(self.im_dir, im_id)
+            image = Image.open(img_path)
+            text = self.class_dict[im_id]
+            image.load()
+            W, H = image.size
+
+            new_H = 16*int(H/16)
+            new_W = 16*int(W/16)
+            scale_factor = float(new_W)/ W
+            image = transforms.Resize((new_H, new_W))(image)
+            Normalize1 = transforms.Compose([transforms.ToTensor()])
+            image = Normalize1(image)
+
+            rects = list()
+            for bbox in bboxes:
+                x1 = int(bbox[0][0]*scale_factor)
+                y1 = bbox[0][1]
+                x2 = int(bbox[2][0]*scale_factor)
+                y2 = bbox[2][1]
+                rects.append([y1, x1, y2, x2])
+
+            boxes = list()
+            cnt = 0
+            for box in rects:
+                cnt+=1
+                if cnt>3:
+                    break
+                box2 = [int(k) for k in box]
+                y1, x1, y2, x2 = box2[0], box2[1], box2[2], box2[3]
+                bbox = image[:,y1:y2+1,x1:x2+1]
+                bbox = transforms.Resize((64, 64))(bbox)
+                boxes.append(bbox.numpy())
+
+
+            # Only for visualisation purpose, no need for ground truth density map indeed.
+            gt_map = np.zeros((image.shape[1], image.shape[2]),dtype='float32')
+            for i in range(dots.shape[0]):
+                gt_map[min(new_H-1,int(dots[i][1]))][min(new_W-1,int(dots[i][0]*scale_factor))]=1
+            gt_map = ndimage.gaussian_filter(gt_map, sigma=(1, 1), order=0)
+            gt_map = torch.from_numpy(gt_map)
+            gt_map = gt_map * 60
+
+            sample = {'image':image,'dots':dots, 'boxes':boxes, 'pos':rects, 'gt_map':gt_map, 'id':im_id}
+
+            extracted_img_path = '{}/{}'.format(self.extracted_dir, im_id)
+            exampler = Image.open(extracted_img_path)
+            exampler.load()
+            W, H = image.size
+
+            new_H = 16*int(H/16)
+            new_W = 16*int(W/16)
+            scale_factor = float(new_W)/ W
+            exampler = transforms.Resize((new_H, new_W))(exampler)
+            exampler = Normalize(exampler)
+
+
+            return sample['image'].float(), sample['gt_map'], text, im_id,  exampler
+
+def collate_fn_pre_extracted(batch):
+    img, den_map, prompt, id,  exampler = zip(*batch)
+
+    return {
+        'image': torch.stack(img, 0),
+        'density': torch.stack(den_map, 0),
+        'img_id': id,
+        'exampler': torch.stack(exampler, 0),
+        'text': prompt
+    }
+
+def collate_fn(batch):
+    img, den_map, prompt, id,  img_gd, img_src = zip(*batch)
+
+    return {
+        'image': torch.stack(img, 0),
+        'density': torch.stack(den_map, 0),
+        'img_id': id,
+        'img_gd': img_gd,
+        'img_src': img_src,
+        'text': prompt
+    }
 
 def random_crop(im_h, im_w, crop_h, crop_w):
     res_h = im_h - crop_h
@@ -334,7 +533,7 @@ class ObjectCount(Dataset):
             
             return img, den_map, prompt, prompt_attn_mask, img_attn_map, img_gd, img_src
         else:
-            # img = img.resize((384, 384), Image.Resampling.BICUBIC)
+            img = img.resize((384, 384), Image.Resampling.BICUBIC)
             img_src, img_gd = load_image(im_path)          # img_gd là Tensor (3,H,W)
 
             return self.transform(img), len(pts), prompt, prompt_attn_mask, os.path.basename(im_path).split('.')[0], img_gd, img_src
@@ -672,21 +871,9 @@ Augmentation = transforms.Compose([
         transforms.GaussianBlur(kernel_size=(7,9))
         ])
 
-Normalize = transforms.Compose([   
-        transforms.ToTensor(),
-        transforms.Normalize(mean=IM_NORM_MEAN, std=IM_NORM_STD)
-        ])
 
-def collate_fn(batch):
-    image, density, boxes, m_flag, text = zip(*batch)
 
-    return {
-        'image': torch.stack(image, 0),
-        'density': torch.stack(density, 0),
-        'boxes': boxes,
-        'm_flag': torch.tensor(m_flag),
-        'text': text
-    }
+
 
 
 import logging

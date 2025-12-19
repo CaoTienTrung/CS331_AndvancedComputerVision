@@ -9,6 +9,7 @@ class RankLoss(nn.Module):
         self.temperature = temperature
 
     def forward(self, patch_embedding, class_text_embedding, gt_density):
+        gt_density = gt_density.unsqueeze(1)  # (B,1,H,W)
         gt_density = F.interpolate(gt_density, size=(224, 224), mode='nearest')
         density_mask = F.max_pool2d(gt_density, kernel_size=16, stride=16, padding=0)  # (B,1,24,24)
         density_mask = density_mask > 0.
